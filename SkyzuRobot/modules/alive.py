@@ -23,8 +23,8 @@ async def awake(event):
     TEXT += "**Thanks For Adding Me Here ❤️**"
     BUTTON = [
         [
-            Button.url("ʜᴇʟᴘ​", "https://t.me/SkyzuRobot?start=help"),
-            Button.url("sᴜᴘᴘᴏʀᴛ​", "https://t.me/skyzusupport"),
+            Button.url("ʜᴇʟᴘ​", "https://t.me/AdamXRobot?start=help"),
+            Button.url("sᴜᴘᴘᴏʀᴛ​", "https://t.me/grup_anime_lovers_indo"),
         ]
     ]
     await tbot.send_file(event.chat_id, PHOTO, caption=TEXT, buttons=BUTTON)
