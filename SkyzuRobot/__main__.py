@@ -100,7 +100,7 @@ buttons = [
 HELP_STRINGS = """
 ᴄʟɪᴄᴋ ᴏɴ ᴛʜᴇ ʙᴜᴛᴛᴏɴꜱ ʙᴇʟᴏᴡ ᴛᴏ ɢᴇᴛ ᴅᴏᴄᴜᴍᴇɴᴛᴀᴛɪᴏɴ ᴀʙᴏᴜᴛ ꜱᴘᴇᴄɪꜰɪᴄ ᴍᴏᴅᴜʟᴇꜱ."""
 
-nao_IMG = "https://telegra.ph/file/601f4266ccc688aea01ee.jpg"
+nao_IMG = "https://telegra.ph/file/44d43929aa4fec3d938f2.jpg"
 
 DONATE_STRING = """Heya, glad to hear you want to donate!
  You can support the project by contacting @rdwan_13 \
