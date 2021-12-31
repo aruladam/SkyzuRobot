@@ -79,7 +79,7 @@ def get_readable_time(seconds: int) -> str:
 
     return ping_time
 
-PHOTO = "https://telegra.ph/file/44d43929aa4fec3d938f2.jpg"
+
 
 
 
