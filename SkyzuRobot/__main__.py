@@ -1,246 +1,16 @@
-import html
-import os
-import json
-import importlib
-import time
-import re
-import sys
-import traceback
-import SkyzuRobot.modules.sql.users_sql as sql
-from sys import argv
-from typing import Optional
-from telegram import __version__ as peler
-from platform import python_version as memek
-from SkyzuRobot import (
-    ALLOW_EXCL,
-    CERT_PATH,
-    DONATION_LINK,
-    LOGGER,
-    OWNER_ID,
-    PORT,
-    SUPPORT_CHAT,
-    TOKEN,
-    URL,
-    WEBHOOK,
-    SUPPORT_CHAT,
-    dispatcher,
-    StartTime,
-    telethn,
-    pbot,
-    updater,
-)
-
-# needed to dynamically load modules
-# NOTE: Module order is not guaranteed, specify that in the config file!
-from SkyzuRobot.modules import ALL_MODULES
-from SkyzuRobot.modules.helper_funcs.chat_status import is_user_admin
-from SkyzuRobot.modules.helper_funcs.misc import paginate_modules
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ParseMode, Update
-from telegram.error import (
-    BadRequest,
-    ChatMigrated,
-    NetworkError,
-    TelegramError,
-    TimedOut,
-    Unauthorized,
-)
-from telegram.ext import (
-    CallbackContext,
-    CallbackQueryHandler,
-    CommandHandler,
-    Filters,
-    MessageHandler,
-)
-from telegram.ext.dispatcher import DispatcherHandlerStop, run_async
-from telegram.utils.helpers import escape_markdown
-
-
-def get_readable_time(seconds: int) -> str:
-    count = 0
-    ping_time = ""
-    time_list = []
-    time_suffix_list = ["s", "m", "h", "days"]
-
-    while count < 4:
-        count += 1
-        remainder, result = divmod(seconds, 60) if count < 3 else divmod(seconds, 24)
-        if seconds == 0 and remainder == 0:
-            break
-        time_list.append(int(result))
-        seconds = int(remainder)
-
-    for x in range(len(time_list)):
-        time_list[x] = str(time_list[x]) + time_suffix_list[x]
-    if len(time_list) == 4:
-        ping_time += time_list.pop() + ", "
-
-    time_list.reverse()
-    ping_time += ":".join(time_list)
-
-    return ping_time
-
-
-PM_START_TEXT = """
-*Hello {} !*
-────────────────────────
-✪ I'm an anime theme bot designed to help manage your telegram group with a lot features.
-✪ Maintained by @skyiarul ✨
-────────────────────────
-Hit the /help to see available command.
-"""
-
-buttons = [
-    [
-        InlineKeyboardButton(text="ʜᴇʟᴘ & ᴄᴏᴍᴍᴀɴᴅ​", callback_data="help_back"),
-    ],
-    [
-        InlineKeyboardButton(text="ᴀʙᴏᴜᴛ", callback_data="Skyzu_"),
-        InlineKeyboardButton(text="ᴛʀʏ ɪɴʟɪɴᴇ​", switch_inline_query_current_chat=""),
-    ],
-    [
-        InlineKeyboardButton(
-            text="sᴏᴜʀᴄᴇ ᴄᴏᴅᴇ​", url="https://grup_anime_lovers_indo"
-        ),
-        InlineKeyboardButton(text="sᴜᴘᴘᴏʀᴛ​", url=f"https://t.me/{SUPPORT_CHAT}"),
-    ],
-    [
-        InlineKeyboardButton(
-            text="➗ ᴀᴅᴅ ᴍᴇ ᴛᴏ ʏᴏᴜʀ ɢʀᴏᴜᴘ​ ➗",
-            url=f"t.me/{dispatcher.bot.username}?startgroup=new",
-        ),
-    ],
-]
-
-HELP_STRINGS = """
-Click on the button bellow to get description about specifics command."""
-
-EMI_IMG = "https://telegra.ph/file/56811b69cbcece20bbebf.jpg"
-
-DONATE_STRING = """Heya, glad to hear you want to donate!
- You can support the project by contacting @skyzu \
- Supporting isnt always financial! \
- Those who cannot provide monetary support are welcome to help us develop the bot at ."""
-
-IMPORTED = {}
-MIGRATEABLE = []
-HELPABLE = {}
-STATS = []
-USER_INFO = []
-DATA_IMPORT = []
-DATA_EXPORT = []
-CHAT_SETTINGS = {}
-USER_SETTINGS = {}
-
-for module_name in ALL_MODULES:
-    imported_module = importlib.import_module("SkyzuRobot.modules." + module_name)
-    if not hasattr(imported_module, "__mod_name__"):
-        imported_module.__mod_name__ = imported_module.__name__
-
-    if imported_module.__mod_name__.lower() not in IMPORTED:
-        IMPORTED[imported_module.__mod_name__.lower()] = imported_module
-    else:
-        raise Exception("Can't have two modules with the same name! Please change one")
-
-    if hasattr(imported_module, "__help__") and imported_module.__help__:
-        HELPABLE[imported_module.__mod_name__.lower()] = imported_module
-
-    # Chats to migrate on chat_migrated events
-    if hasattr(imported_module, "__migrate__"):
-        MIGRATEABLE.append(imported_module)
-
-    if hasattr(imported_module, "__stats__"):
-        STATS.append(imported_module)
-
-    if hasattr(imported_module, "__user_info__"):
-        USER_INFO.append(imported_module)
-
-    if hasattr(imported_module, "__import_data__"):
-        DATA_IMPORT.append(imported_module)
-
-    if hasattr(imported_module, "__export_data__"):
-        DATA_EXPORT.append(imported_module)
-
-    if hasattr(imported_module, "__chat_settings__"):
-        CHAT_SETTINGS[imported_module.__mod_name__.lower()] = imported_module
-
-    if hasattr(imported_module, "__user_settings__"):
-        USER_SETTINGS[imported_module.__mod_name__.lower()] = imported_module
-
-
-# do not async
-def send_help(chat_id, text, keyboard=None):
-    if not keyboard:
-        keyboard = InlineKeyboardMarkup(paginate_modules(0, HELPABLE, "help"))
-    dispatcher.bot.send_message(
-        chat_id=chat_id,
-        text=text,
-        parse_mode=ParseMode.MARKDOWN,
-        disable_web_page_preview=True,
-        reply_markup=keyboard,
-    )
-
-
-def test(update: Update, context: CallbackContext):
-    # pprint(eval(str(update)))
-    # update.effective_message.reply_text("Hola tester! _I_ *have* `markdown`", parse_mode=ParseMode.MARKDOWN)
-    update.effective_message.reply_text("This person edited a message")
-    print(update.effective_message)
-
-
-def start(update: Update, context: CallbackContext):
-    args = context.args
-    uptime = get_readable_time((time.time() - StartTime))
-    if update.effective_chat.type == "private":
-        if len(args) >= 1:
-            if args[0].lower() == "help":
-                send_help(update.effective_chat.id, HELP_STRINGS)
-            elif args[0].lower().startswith("ghelp_"):
-                mod = args[0].lower().split("_", 1)[1]
-                if not HELPABLE.get(mod, False):
-                    return
-                send_help(
-                    update.effective_chat.id,
-                    HELPABLE[mod].__help__,
-                    InlineKeyboardMarkup(
-                        [
-                            [
-                                InlineKeyboardButton(
-                                    text="Go Back", callback_data="help_back"
-                                )
-                            ]
-                        ]
-                    ),
-                )
-
-            elif args[0].lower().startswith("stngs_"):
-                match = re.match("stngs_(.*)", args[0].lower())
-                chat = dispatcher.bot.getChat(match.group(1))
-
-                if is_user_admin(chat, update.effective_user.id):
-                    send_settings(match.group(1), update.effective_user.id, False)
-                else:
-                    send_settings(match.group(1), update.effective_user.id, True)
-
-            elif args[0][1:].isdigit() and "rules" in IMPORTED:
-                IMPORTED["rules"].send_rules(update, args[0], from_pm=True)
 
         else:
-            first_name = update.effective_user.first_name
             update.effective_message.reply_text(
-                PM_START_TEXT.format(
-                    escape_markdown(first_name),
-                    escape_markdown(uptime),
-                    sql.num_users(),
-                    sql.num_chats(),
-                ),
+                PM_START_TEXT,
                 reply_markup=InlineKeyboardMarkup(buttons),
                 parse_mode=ParseMode.MARKDOWN,
                 timeout=60,
-                disable_web_page_preview=True,
             )
     else:
         update.effective_message.reply_text(
-            f"<b>Hi I'm Skyzu robot!</b>\n<b>Started working since:</b> <code>{uptime}</code>",
+            "I'm awake already!\n<b>Haven't slept since:</b> <code>{}</code>".format(
+                uptime
+            ),
             parse_mode=ParseMode.HTML,
         )
 
@@ -303,6 +73,7 @@ def error_callback(update: Update, context: CallbackContext):
         # handle all other telegram related errors
 
 
+@run_async
 def help_button(update, context):
     query = update.callback_query
     mod_match = re.match(r"help_module\((.+?)\)", query.data)
@@ -326,7 +97,7 @@ def help_button(update, context):
                 parse_mode=ParseMode.MARKDOWN,
                 disable_web_page_preview=True,
                 reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton(text="Go Back", callback_data="help_back")]]
+                    [[InlineKeyboardButton(text="Back", callback_data="help_back")]]
                 ),
             )
 
@@ -367,171 +138,71 @@ def help_button(update, context):
         pass
 
 
-def Skyzu_about_callback(update, context):
+@run_async
+def layla_about_callback(update, context):
     query = update.callback_query
-    if query.data == "Skyzu_":
+    if query.data == "layla_":
         query.message.edit_text(
-            text="๏ I'm *Skyzu*, a powerful group management bot built to help you manage your group easily."
-            "\n• I can restrict users."
-            "\n• I can greet users with customizable welcome messages and even set a group's rules."
-            "\n• I have an advanced anti-flood system."
-            "\n• I can warn users until they reach max warns, with each predefined actions such as ban, mute, kick, etc."
-            "\n• I have a note keeping system, blacklists, and even predetermined replies on certain keywords."
-            "\n• I check for admins' permissions before executing any command and more stuffs"
-            "\n\n_Skyzu's licensed under the GNU General Public License v3.0_"
-            "\n\n Click on button bellow to get basic help for SkyzuRobot.",
+            text=""" ℹ️ I'm *Layla*, a powerful group management bot built to help you manage your group easily.
+                 \n❍ I can restrict users.
+                 \n❍ I can greet users with customizable welcome messages and even set a group's rules.
+                 \n❍ I have an advanced anti-flood system.
+                 \n❍ I can warn users until they reach max warns, with each predefined actions such as ban, mute, kick, etc.
+                 \n❍ I have a note keeping system, blacklists, and even predetermined replies on certain keywords.
+                 \n❍ I check for admins' permissions before executing any command and more stuffs
+                 \n\n_Layla's licensed under the GNU General Public License v3.0_
+                 \n❍ Awesome Bots @LaylaList
+                 \n❍ Support Group @AwesomeSupport
+                 \n❍ Assistant @LaylaAssistant.
+                 \nHere is the [💾Repository](https://github.com/QueenArzoo/LaylaRobot).
+                 \n\nIf you have any question about Layla, let us know at .""",
             parse_mode=ParseMode.MARKDOWN,
             disable_web_page_preview=True,
             reply_markup=InlineKeyboardMarkup(
                 [
-                    [
-                        InlineKeyboardButton(
-                            text="ᴀᴅᴍɪɴs​", callback_data="Skyzu_admin"
-                        ),
-                        InlineKeyboardButton(
-                            text="ɴᴏᴛᴇs​", callback_data="Skyzu_notes"
-                        ),
-                    ],
-                    [
-                        InlineKeyboardButton(
-                            text="sᴜᴘᴘᴏʀᴛ​", callback_data="Skyzu_support"
-                        ),
-                        InlineKeyboardButton(
-                            text="ᴄʀᴇᴅɪᴛs​", callback_data="Skyzu_credit"
-                        ),
-                    ],
-                    [
-                        InlineKeyboardButton(
-                            text="ᴍᴜsɪᴄᴘʟᴀʏᴇʀ​", callback_data="source_"
-                        ),
-                    ],
-                    [
-                        InlineKeyboardButton(
-                            text="ɢᴏ ʙᴀᴄᴋ​", callback_data="Skyzu_back"
-                        ),
-                    ],
+                 [
+                    InlineKeyboardButton(text="Back", callback_data="layla_back")
+                 ]
                 ]
             ),
         )
-    elif query.data == "Skyzu_back":
-        first_name = update.effective_user.first_name
-        uptime = get_readable_time((time.time() - StartTime))
+    elif query.data == "layla_back":
         query.message.edit_text(
-            PM_START_TEXT.format(
-                escape_markdown(first_name),
-                escape_markdown(uptime),
-                sql.num_users(),
-                sql.num_chats(),
-            ),
-            reply_markup=InlineKeyboardMarkup(buttons),
-            parse_mode=ParseMode.MARKDOWN,
-            timeout=60,
-            disable_web_page_preview=True,
-        )
-
-    elif query.data == "Skyzu_admin":
-        query.message.edit_text(
-            text=f"*๏ Let's make your group bit effective now*"
-            f"\nCongragulations, {dispatcher.bot.first_name} now ready to manage your group."
-            "\n\n*Admin Tools*"
-            "\nBasic Admin tools help you to protect and powerup your group."
-            "\nYou can ban members, Kick members, Promote someone as admin through commands of bot."
-            "\n\n*Greetings*"
-            "\nLets set a welcome message to welcome new users coming to your group."
-            "\nsend `/setwelcome [message]` to set a welcome message!",
-            parse_mode=ParseMode.MARKDOWN,
-            disable_web_page_preview=True,
-            reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton(text="ɢᴏ ʙᴀᴄᴋ​", callback_data="Skyzu_")]]
-            ),
-        )
-
-    elif query.data == "Skyzu_notes":
-        query.message.edit_text(
-            text=f"<b>๏ Setting up notes</b>"
-            f"\nYou can save message/media/audio or anything as notes"
-            f"\nto get a note simply use # at the beginning of a word"
-            f"\n\nYou can also set buttons for notes and filters (refer help menu)",
-            parse_mode=ParseMode.HTML,
-            reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton(text="ɢᴏ ʙᴀᴄᴋ​", callback_data="Skyzu_")]]
-            ),
-        )
-    elif query.data == "Skyzu_support":
-        query.message.edit_text(
-            text=f"*๏ {dispatcher.bot.first_name} support chats*"
-            "\nJoin My Support Group/Channel for see or report a problem on Skyzu.",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=InlineKeyboardMarkup(
-                [
-                    [
-                        InlineKeyboardButton(text="sᴜᴘᴘᴏʀᴛ​", url="t.me/skyzusupport"),
-                        InlineKeyboardButton(
-                            text="ᴜᴘᴅᴀᴛᴇs​", url="https://t.me/ProjectSkyzu"
-                        ),
-                    ],
-                    [
-                        InlineKeyboardButton(text="ɢᴏ ʙᴀᴄᴋ​", callback_data="Skyzu_"),
-                    ],
-                ]
-            ),
-        )
-
-    elif query.data == "Skyzu_credit":
-        query.message.edit_text(
-            text=f"<b>๏ Credis for Skyzu</b>\n"
-            f"\nHere Developers Making The SkyzuRobot",
-            parse_mode=ParseMode.HTML,
-            reply_markup=InlineKeyboardMarkup(
-                [
-                    [
-                        InlineKeyboardButton(text="Skyzu", url="t.me/skyiarul"),
-                    ],
-                    [
-                        InlineKeyboardButton(text="ɢᴏ ʙᴀᴄᴋ​", callback_data="Skyzu_"),
-                    ],
-                ]
-            ),
+                PM_START_TEXT,
+                reply_markup=InlineKeyboardMarkup(buttons),
+                parse_mode=ParseMode.MARKDOWN,
+                timeout=60,
+                disable_web_page_preview=False,
         )
 
 
+@run_async
 def Source_about_callback(update, context):
     query = update.callback_query
     if query.data == "source_":
         query.message.edit_text(
-            text="๏›› This advance command for Musicplayer."
-            "\n\n๏ Command for admins only."
-            "\n • `/reload` - For refreshing the adminlist."
-            "\n • `/pause` - To pause the playback."
-            "\n • `/resume` - To resuming the playback You've paused."
-            "\n • `/skip` - To skipping the player."
-            "\n • `/end` - For end the playback."
-            "\n • `/musicplayer <on/off>` - Toggle for turn ON or turn OFF the musicplayer."
-            "\n\n๏ Command for all members."
-            "\n • `/play` <query /reply audio> - Playing music via YouTube."
-            "\n • `/playlist` - To playing a playlist of groups or your personal playlist",
+            text=""" Hi..🤗 I'm *Layla*
+                 \nHere is the [Source Code](https://github.com/QueenArzoo/LaylaRobot) .""",
             parse_mode=ParseMode.MARKDOWN,
             disable_web_page_preview=True,
             reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton(text="ɢᴏ ʙᴀᴄᴋ​", callback_data="Skyzu_")]]
+                [
+                 [
+                    InlineKeyboardButton(text="Go Back", callback_data="source_back")
+                 ]
+                ]
             ),
         )
     elif query.data == "source_back":
-        first_name = update.effective_user.first_name
         query.message.edit_text(
-            PM_START_TEXT.format(
-                escape_markdown(first_name),
-                escape_markdown(uptime),
-                sql.num_users(),
-                sql.num_chats(),
-            ),
-            reply_markup=InlineKeyboardMarkup(buttons),
-            parse_mode=ParseMode.MARKDOWN,
-            timeout=60,
-            disable_web_page_preview=True,
+                PM_START_TEXT,
+                reply_markup=InlineKeyboardMarkup(buttons),
+                parse_mode=ParseMode.MARKDOWN,
+                timeout=60,
+                disable_web_page_preview=False,
         )
 
-
+@run_async
 def get_help(update: Update, context: CallbackContext):
     chat = update.effective_chat  # type: Optional[Chat]
     args = update.effective_message.text.split(None, 1)
@@ -562,7 +233,7 @@ def get_help(update: Update, context: CallbackContext):
                 [
                     [
                         InlineKeyboardButton(
-                            text="ʜᴇʟᴘ & ᴄᴏᴍᴍᴀɴᴅ​",
+                            text="Help",
                             url="t.me/{}?start=help".format(context.bot.username),
                         )
                     ]
@@ -583,7 +254,7 @@ def get_help(update: Update, context: CallbackContext):
             chat.id,
             text,
             InlineKeyboardMarkup(
-                [[InlineKeyboardButton(text="ɢᴏ ʙᴀᴄᴋ​", callback_data="help_back")]]
+                [[InlineKeyboardButton(text="Back", callback_data="help_back")]]
             ),
         )
 
@@ -632,6 +303,7 @@ def send_settings(chat_id, user_id, user=False):
             )
 
 
+@run_async
 def settings_button(update: Update, context: CallbackContext):
     query = update.callback_query
     user = update.effective_user
@@ -655,7 +327,7 @@ def settings_button(update: Update, context: CallbackContext):
                     [
                         [
                             InlineKeyboardButton(
-                                text="ɢᴏ ʙᴀᴄᴋ​",
+                                text="Back",
                                 callback_data="stngs_back({})".format(chat_id),
                             )
                         ]
@@ -715,6 +387,7 @@ def settings_button(update: Update, context: CallbackContext):
             LOGGER.exception("Exception in settings buttons. %s", str(query.data))
 
 
+@run_async
 def get_settings(update: Update, context: CallbackContext):
     chat = update.effective_chat  # type: Optional[Chat]
     user = update.effective_user  # type: Optional[User]
@@ -730,7 +403,7 @@ def get_settings(update: Update, context: CallbackContext):
                     [
                         [
                             InlineKeyboardButton(
-                                text="sᴇᴛᴛɪɴɢs​",
+                                text="Settings",
                                 url="t.me/{}?start=stngs_{}".format(
                                     context.bot.username, chat.id
                                 ),
@@ -746,6 +419,7 @@ def get_settings(update: Update, context: CallbackContext):
         send_settings(chat.id, user.id, True)
 
 
+@run_async
 def donate(update: Update, context: CallbackContext):
     user = update.effective_message.from_user
     chat = update.effective_chat  # type: Optional[Chat]
@@ -755,12 +429,13 @@ def donate(update: Update, context: CallbackContext):
             DONATE_STRING, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True
         )
 
-        if OWNER_ID != 1606221784:
+        if OWNER_ID != 254318997 and DONATION_LINK:
             update.effective_message.reply_text(
-                "I'm free for everyone ❤️ If you wanna make me smile, just join"
-                "[My Channel]({})".format(DONATION_LINK),
+                "You can also donate to the person currently running me "
+                "[here]({})".format(DONATION_LINK),
                 parse_mode=ParseMode.MARKDOWN,
             )
+
     else:
         try:
             bot.send_message(
@@ -802,14 +477,7 @@ def main():
 
     if SUPPORT_CHAT is not None and isinstance(SUPPORT_CHAT, str):
         try:
-            dispatcher.bot.sendMessage(
-                f"@{SUPPORT_CHAT}",
-                f"""**Skyzu Robot Started!**
-
-**Python:** `{memek()}`
-**Telegram Library:** `v{peler}`""",
-                parse_mode=ParseMode.MARKDOWN,
-            )
+            dispatcher.bot.sendMessage(f"@{SUPPORT_CHAT}", "Yes I'm alive 😹")
         except Unauthorized:
             LOGGER.warning(
                 "Bot isnt able to send message to support_chat, go and check!"
@@ -817,33 +485,22 @@ def main():
         except BadRequest as e:
             LOGGER.warning(e.message)
 
-    test_handler = CommandHandler("test", test, run_async=True)
-    start_handler = CommandHandler("start", start, run_async=True)
+    test_handler = CommandHandler("test", test)
+    start_handler = CommandHandler("start", start)
 
-    help_handler = CommandHandler("help", get_help, run_async=True)
-    help_callback_handler = CallbackQueryHandler(
-        help_button, pattern=r"help_.*", run_async=True
-    )
+    help_handler = CommandHandler("help", get_help)
+    help_callback_handler = CallbackQueryHandler(help_button, pattern=r"help_.*")
 
-    settings_handler = CommandHandler("settings", get_settings, run_async=True)
-    settings_callback_handler = CallbackQueryHandler(
-        settings_button, pattern=r"stngs_", run_async=True
-    )
+    settings_handler = CommandHandler("settings", get_settings)
+    settings_callback_handler = CallbackQueryHandler(settings_button, pattern=r"stngs_")
 
-    about_callback_handler = CallbackQueryHandler(
-        Skyzu_about_callback, pattern=r"Skyzu_", run_async=True
-    )
+    about_callback_handler = CallbackQueryHandler(layla_about_callback, pattern=r"layla_")
+    source_callback_handler = CallbackQueryHandler(Source_about_callback, pattern=r"source_")
 
-    source_callback_handler = CallbackQueryHandler(
-        Source_about_callback, pattern=r"source_", run_async=True
-    )
+    donate_handler = CommandHandler("donate", donate)
+    migrate_handler = MessageHandler(Filters.status_update.migrate, migrate_chats)
 
-    donate_handler = CommandHandler("donate", donate, run_async=True)
-    migrate_handler = MessageHandler(
-        Filters.status_update.migrate, migrate_chats, run_async=True
-    )
-
-    dispatcher.add_handler(test_handler)
+    # dispatcher.add_handler(test_handler)
     dispatcher.add_handler(start_handler)
     dispatcher.add_handler(help_handler)
     dispatcher.add_handler(about_callback_handler)
@@ -867,7 +524,7 @@ def main():
 
     else:
         LOGGER.info("Using long polling.")
-        updater.start_polling(timeout=15, read_latency=4, drop_pending_updates=True)
+        updater.start_polling(timeout=15, read_latency=4, clean=True)
 
     if len(argv) not in (1, 3, 4):
         telethn.disconnect()
