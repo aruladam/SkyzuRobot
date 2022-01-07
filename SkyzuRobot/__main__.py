@@ -84,7 +84,7 @@ PM_START_TEXT = """
 *Hello {} !*
 ────────────────────────
 ✪ I'm an anime theme bot designed to help manage your telegram group with a lot features.
-✪ Maintained by @SkyiArul ✨
+✪ Maintained by @skyiarul ✨
 ────────────────────────
 Hit the /help to see available command.
 """
@@ -99,7 +99,7 @@ buttons = [
     ],
     [
         InlineKeyboardButton(
-            text="sᴏᴜʀᴄᴇ ᴄᴏᴅᴇ​", url="https://grup_anime_lovers_indo"
+            text="🚑support", url="https://grup_anime_lovers_indo"
         ),
         InlineKeyboardButton(text="sᴜᴘᴘᴏʀᴛ​", url=f"https://t.me/{SUPPORT_CHAT}"),
     ],
